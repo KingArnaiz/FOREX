@@ -1,9 +1,4 @@
 
-# coding: utf-8
-
-# In[1]:
-
-
 from pandas import DataFrame
 from pandas import Series
 from pandas import concat
@@ -14,8 +9,14 @@ from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import Dropout
 from keras.layers import Dense
+from keras.layers import Activation
+from keras.callbacks import EarlyStopping
 from keras.layers import LSTM
+from keras.regularizers import L1L2
 from math import sqrt
+#import matplotlib
+#be able to save images on server
+#matplotlib.use('Agg')
 from matplotlib import pyplot
 import numpy as np
 
@@ -73,9 +74,10 @@ def fit_lstm(train, batch_size, nb_epoch, neurons):
     model.add(LSTM(neurons, batch_input_shape=(batch_size, X.shape[1], X.shape[2]), stateful=True))
     model.add(Dropout(0.2))
     model.add(Dense(1, activation = 'linear'))
-    model.compile(loss='mean_squared_error', optimizer='adam')
+    model.compile(loss='mean_squared_error',optimizer='adam')
+    early_stopping = EarlyStopping(monitor = 'loss', patience=10)
     for i in range(nb_epoch):
-        model.fit(X, y, epochs=1, batch_size=batch_size, verbose=0, shuffle=False)
+        model.fit(X, y, epochs=1, batch_size=batch_size, callbacks=[early_stopping], verbose=0, shuffle=False)
         model.reset_states()
     return model
 
@@ -86,27 +88,18 @@ def forecast_lstm(model, batch_size, X):
     return yhat[0,0]
 
 
-# In[2]:
-
-
 # load dataset
-series = read_csv('latestUSDPHPdata1.csv', parse_dates=[0], index_col=0, squeeze=True, date_parser=parser)
-
-
-# In[3]:
+series = read_csv('USDVolumesData.csv', parse_dates=[0], index_col=0, squeeze=True, date_parser=parser)
 
 
 # summarize first few rows
 #print(series.head())
 # line plot
-series.plot()
-pyplot.ylabel('Rate')
+#series.plot()
+#pyplot.ylabel('Rate')
 #pyplot.savefig('/Users/ronrickarnaiz/Documents/NM/FOREX/newlstm1.png', bbox_inches = 'tight')
-pyplot.show()
-series.head()
-
-
-# In[4]:
+#pyplot.show()
+#series.head()
 
 
 # transform data to be stationary
@@ -115,40 +108,23 @@ diff_values = difference(raw_values, 1)
 supervised_values = diff_values.values
 
 
-# In[5]:
-
-
 # transform data to be supervised learning
 supervised = timeseries_to_supervised(diff_values, 1)
 supervised_values = supervised.values
-
-
-# In[6]:
 
 
 # split data into train and test-sets
 train, test = supervised_values[0:-12], supervised_values[-12:]
 
 
-# In[7]:
-
-
 # transform the scale of the data
 scaler, train_scaled, test_scaled = scale(train, test)
-
-
-# In[24]:
-
 
 # fit the model
 lstm_model = fit_lstm(train_scaled, 1, 1000, 6)
 # forecast the entire training dataset to build up state for forecasting
 train_reshaped = train_scaled[:, 0].reshape(len(train_scaled), 1, 1)
 lstm_model.predict(train_reshaped, batch_size=1)
-
-
-# In[22]:
-
 
 # walk-forward validation on the test data
 predictions = list()
@@ -166,47 +142,18 @@ for i in range(len(test_scaled)):
     print('day=%d, Predicted=%f, Expected=%f' % (i+1, yhat, expected))
 
 
-# In[23]:
-
-
 # report performance
-rmse = sqrt(mean_squared_error(raw_values[-12:], predictions))
+rmse = sqrt(mean_squared_error(raw_values[-8:], predictions))
+mape = np.mean(np.abs(raw_values[-8:] - predictions) / raw_values[-8:]) * 100
 print('Test RMSE: %.3f' % rmse)
+print('Test MAPE: %.3f' % mape)
 # line plot of observed vs predicted
-pyplot.plot(raw_values[-12:])
-pyplot.plot(predictions)
-pyplot.ylabel('TRADING_RATE')
-pyplot.xlabel('Day')
+#pyplot.plot(raw_values[-12:])
+#pyplot.plot(predictions)
+#pyplot.ylabel('TRADING_RATE')
+#pyplot.xlabel('Day')
 #pyplot.savefig('newlstm3.png',bbox_inches = 'tight')
-pyplot.show()
+#pyplot.show()
 
 
-# In[ ]:
-
-
-# repeat experiment
-repeats = 30
-error_scores = list()
-for r in range(repeats):
-    # fit the model
-    lstm_model = fit_lstm(train_scaled, 1, 5, 4)
-    # forecast the entire training dataset to build up state for forecasting
-    train_reshaped = train_scaled[:, 0].reshape(len(train_scaled), 1, 1)
-    lstm_model.predict(train_reshaped, batch_size=1)
-    # walk-forward validation on the test data
-    predictions = list()
-    for i in range(len(test_scaled)):
-        # make one-step forecast
-        X, y = test_scaled[i, 0:-1], test_scaled[i, -1]
-        yhat = forecast_lstm(lstm_model, 1, X)
-        # invert scaling
-        yhat = invert_scale(scaler, X, yhat)
-        # invert differencing
-        yhat = inverse_difference(raw_values, yhat, len(test_scaled)+1-i)
-        # store forecast
-        predictions.append(yhat)
-    # report performance
-    rmse = sqrt(mean_squared_error(raw_values[-12:], predictions))
-    print('%d) Test RMSE: %.3f' % (r+1, rmse))
-    error_scores.append(rmse)
 
